@@ -59,7 +59,6 @@ tmp/
 # Arquivos de configuração local
 config.local.php
 config.dev.php
-.htaccess
 .env
 
 # Arquivos de sessão PHP
