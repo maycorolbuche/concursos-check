@@ -1,0 +1,131 @@
+# Arquivos JSON
+*.json
+
+# Arquivos de log
+*.log
+error_log
+debug.log
+
+# Arquivos temporários
+*.tmp
+*.temp
+*.cache
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Arquivos de backup
+*.bak
+*.backup
+*.old
+concursos_*.json
+modificacoes_*.json
+
+# IDE e editores
+.vscode/
+.idea/
+*.sublime-*
+.project
+.classpath
+.settings/
+*.code-workspace
+
+# Arquivos de sistema operacional
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Arquivos de dados sensíveis
+*.db
+*.sqlite
+*.sqlite3
+.env
+.env.local
+.env.*.local
+
+# Diretórios de cache
+cache/
+temp/
+tmp/
+.cache/
+
+# Arquivos de configuração local
+config.local.php
+config.dev.php
+.htaccess
+.env
+
+# Arquivos de sessão PHP
+sess_*
+session_*
+
+# Arquivos de upload/download
+downloads/
+uploads/
+temp_downloads/
+
+# Arquivos de relatórios
+relatorios/
+reports/
+*.pdf
+*.xlsx
+*.csv
+
+# Docker
+docker-compose.override.yml
+.docker/
+Dockerfile.dev
+
+# Composer (se usar)
+composer.phar
+vendor/
+composer.lock
+
+# Node (se usar)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Arquivos de cobertura de teste
+coverage/
+*.cov
+*.clover
+
+# Arquivos de debug
+*.dump
+*.heapdump
+*.prof
+
+# Arquivos compactados
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.tgz
+
+# Arquivos de mídia (opcional - se não quiser versionar imagens)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.mp4
+*.mp3
+
+# Arquivos específicos do scraper
+scraper_cache/
+logs/
+data/
+output/
+
+# Arquivos de configuração de ambiente
+.phpunit.result.cache
+.phpcs-cache
+.stignore
