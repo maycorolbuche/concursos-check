@@ -93,6 +93,24 @@ class WebScraper
     }
 }
 
+function salvarErro($mensagemErro, $detalhes = [])
+{
+    $erro = [
+        'timestamp' => date('Y-m-d H:i:s'),
+        'mensagem' => $mensagemErro,
+        'detalhes' => $detalhes,
+        'ultimo_sucesso' => file_exists('concursos.json') ? date('Y-m-d H:i:s', filemtime('concursos.json')) : null
+    ];
+
+    // Sempre sobrescreve o arquivo de erro
+    file_put_contents('erro.json', json_encode($erro, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    // Também salva em log simples para debug rápido (opcional)
+    $logSimples = date('Y-m-d H:i:s') . " - ERRO: " . $mensagemErro . PHP_EOL;
+    file_put_contents('ultimo_erro.log', $logSimples);
+}
+
+
 function toSlug($title)
 {
     // Converte para minúsculas
@@ -466,9 +484,30 @@ try {
                 unlink('modificacoes.json');
             }
         }
+
+        // Se chegou aqui sem erros, remove o arquivo de erro se existir
+        if (file_exists('erro.json')) {
+            unlink('erro.json');
+        }
+        if (file_exists('ultimo_erro.log')) {
+            unlink('ultimo_erro.log');
+        }
     } else {
-        echo "Div com id 'concursos' não encontrada.\n";
+        throw new Exception("Div com id 'concursos' não encontrada na página.");
     }
 } catch (Exception $e) {
-    echo "Erro: " . $e->getMessage() . "\n";
+    $mensagemErro = $e->getMessage();
+    $detalhesErro = [
+        'arquivo' => $e->getFile(),
+        'linha' => $e->getLine(),
+        'codigo' => $e->getCode(),
+        'trace' => $e->getTraceAsString()
+    ];
+
+    // Salva o erro
+    salvarErro($mensagemErro, $detalhesErro);
+
+    // Exibe no console
+    echo "\n❌ ERRO: " . $mensagemErro . "\n";
+    echo "📁 Erro salvo em erro.json\n";
 }
