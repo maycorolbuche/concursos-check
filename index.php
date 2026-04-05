@@ -140,93 +140,6 @@ function toSlug($title)
     return $slug;
 }
 
-function extractDetail($div, $xpath, $dom)
-{
-    $detail = [];
-
-    // Extrai informações da div com classe "cd" (cargo, vagas, salário, escolaridade)
-    $cdDiv = $xpath->query(".//div[@class='cd']", $div);
-    if ($cdDiv->length > 0) {
-        $cdContent = $cdDiv->item(0);
-        $texto = trim($cdContent->textContent);
-
-        // Divide as linhas do texto
-        $linhas = explode("\n", $texto);
-
-        // Extrai vagas e salário (primeira linha)
-        if (isset($linhas[0])) {
-            $primeiraLinha = trim($linhas[0]);
-
-            // Extrai salário (se houver)
-            if (preg_match('/R\$[\s]*[\d\.]+,\d{2}/', $primeiraLinha, $matchSalario)) {
-                $detail['salario'] = $matchSalario[0];
-                // Remove o salário da string para pegar apenas as vagas
-                $primeiraLinha = str_replace($matchSalario[0], '', $primeiraLinha);
-            }
-
-            // Extrai número de vagas
-            if (preg_match('/(\d+(?:\.\d+)?)\s*vagas?/i', $primeiraLinha, $matchVagas)) {
-                $detail['vagas'] = $matchVagas[1];
-            } elseif (preg_match('/(\d+(?:\.\d+)?)/', $primeiraLinha, $matchVagas)) {
-                $detail['vagas'] = $matchVagas[1];
-            }
-        }
-
-        // Extrai cargo (segunda linha - dentro do <span>)
-        $cargoSpan = $xpath->query(".//span", $cdDiv->item(0));
-        if ($cargoSpan->length > 0) {
-            $cargoTexto = trim($cargoSpan->item(0)->textContent);
-            if ($cargoTexto) {
-                $detail['cargo'] = $cargoTexto;
-            }
-
-            // Extrai nível de escolaridade (terceira linha - segundo span)
-            if ($cargoSpan->length > 1) {
-                $nivelTexto = trim($cargoSpan->item(1)->textContent);
-                if ($nivelTexto) {
-                    $detail['nivel'] = $nivelTexto;
-                }
-            }
-        }
-    }
-
-    // Extrai data da div com classe "ce"
-    $ceDiv = $xpath->query(".//div[@class='ce']", $div);
-    if ($ceDiv->length > 0) {
-        $dataTexto = trim($ceDiv->item(0)->textContent);
-
-        // Verifica se tem "Prorrogado"
-        if (strpos($dataTexto, 'Prorrogado') !== false) {
-            $detail['data_status'] = 'prorrogado';
-            // Extrai a nova data
-            if (preg_match('/(\d{2}\/\d{2}\/\d{4})/', $dataTexto, $matchData)) {
-                $detail['data'] = $matchData[1];
-            }
-        } else {
-            $detail['data_status'] = 'normal';
-            // Extrai data normal
-            if (preg_match('/(\d{2}\/\d{2}\/\d{4})/', $dataTexto, $matchData)) {
-                $detail['data'] = $matchData[1];
-            }
-        }
-
-        $detail['data_raw'] = trim($dataTexto);
-    }
-
-    // Extrai localização (UF) da div com classe "cc"
-    $ccDiv = $xpath->query(".//div[@class='cc']", $div);
-    if ($ccDiv->length > 0) {
-        $uf = trim($ccDiv->item(0)->textContent);
-        if ($uf && $uf != ' ') {
-            $detail['uf'] = $uf;
-        }
-    }
-
-    return $detail;
-}
-
-
-
 
 
 // Função para carregar dados anteriores
@@ -336,6 +249,10 @@ function processaModificacoes($modificacoes)
             $mensagem .= "═════════════════" . PHP_EOL;
             $mensagem .= PHP_EOL;
             $mensagem .= "📌 " . t($item['anterior']['titulo'] ?? null, $item['titulo']) . PHP_EOL . PHP_EOL;
+
+            if ($item['cadastro_reserva']) {
+                $mensagem .= "⚠️ CADASTRO RESERVA ⚠️" . PHP_EOL;
+            }
 
             if (!empty($item['cargo'])) {
                 $mensagem .= "💼 Cargo: " . t($item['anterior']['cargo'] ?? null, $item['cargo']) . PHP_EOL;
@@ -463,6 +380,7 @@ try {
                         $detail = [
                             'vagas' => null,
                             'salario' => null,
+                            'cadastro_reserva' => false,
                             'cargo' => null,
                             'nivel' => null,
                             'uf' => null,
@@ -484,6 +402,11 @@ try {
                             // Tenta extrair salário
                             if (preg_match('/R\$[\s]*([\d\.]+,\d{2})/', $textoCD, $match)) {
                                 $detail['salario'] = 'R$ ' . $match[1];
+                            }
+
+                            // Tenta extrair informação de cadastro reserva
+                            if (preg_match('/cadastro\s+(?:de\s+)?reserva/i', $textoCD)) {
+                                $detail['cadastro_reserva'] = true;
                             }
 
                             // Extrai spans para cargo e nível
