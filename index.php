@@ -299,19 +299,87 @@ function gerarModificacoes($dadosNovos, $dadosAntigos)
     return $modificacoes;
 }
 
-
-function sendTelegramMessage($mensagem)
+function t($old, $new)
 {
-    $chatID = "";
-    $botToken = "";
+    return $old !== null && $old != $new ? "<s>{$old}</s> → {$new}" : $new;
+}
+
+function processaModificacoes($modificacoes)
+{
+
+    $env = [];
     if (file_exists("env.json")) {
         $conteudo = file_get_contents("env.json");
         $env = json_decode($conteudo, true);
-        $chatID = $env['telegram']['chat_id'];
-        $botToken = $env['telegram']['bot_token'];
     }
+    $chatIDAll = $env['telegram']['all']['chat_id'] ?? null;
+    $botTokenAll = $env['telegram']['all']['bot_token'] ?? null;
+
+    foreach ($modificacoes as $uf => $data) {
+
+        $chatID = $env['telegram'][strtolower($uf)]['chat_id'] ?? null;
+        $botToken = $env['telegram'][strtolower($uf)]['bot_token'] ?? null;
+
+        foreach ($data as $item) {
+            if ($item["status"] != "novo" && $item["status"] != "modificado") {
+                continue;
+            }
+
+            $mensagem = "";
+            $mensagem .= "═════════════════" . PHP_EOL;
+            $mensagem .= "<b>"
+                . ($item["status"] == "novo"
+                    ? "🆕 NOVO CONCURSO"
+                    : "📝 CONCURSO ATUALIZADO"
+                )
+                . "</b>" . PHP_EOL;
+            $mensagem .= "═════════════════" . PHP_EOL;
+            $mensagem .= PHP_EOL;
+            $mensagem .= "📌 " . t($item['anterior']['titulo'] ?? null, $item['titulo']) . PHP_EOL . PHP_EOL;
+
+            if (!empty($item['cargo'])) {
+                $mensagem .= "💼 Cargo: " . t($item['anterior']['cargo'] ?? null, $item['cargo']) . PHP_EOL;
+            }
+
+            if (!empty($item['vagas'])) {
+                $mensagem .= "📊 Vagas: " . t($item['anterior']['vagas'] ?? null, $item['vagas']) . PHP_EOL;
+            }
+
+            if (!empty($item['salario'])) {
+                $mensagem .= "💰 Salário: " . t($item['anterior']['salario'] ?? null, $item['salario']) . PHP_EOL;
+            }
+
+            if (!empty($item['nivel'])) {
+                $mensagem .= "🎓 Nível: " . t($item['anterior']['nivel'] ?? null, $item['nivel']) . PHP_EOL;
+            }
+
+            if (!empty($uf) && trim($uf) != '' && $uf != ' ') {
+                $mensagem .= "📍 Local: " . t($item['anterior']['local'] ?? null, $uf) . PHP_EOL;
+            }
+
+            $dataIcon = $item['data_prorrogada'] ? "⚠️" : "📅";
+            if (!empty($item['data'])) {
+                $mensagem .= "{$dataIcon} Data limite: " . t($item['anterior']['data'] ?? null, $item['data']) . PHP_EOL;
+                if ($item['data_prorrogada']) {
+                    $mensagem .= "⚠️ Prorrogado!" . PHP_EOL;
+                }
+            }
+
+            $mensagem .= "🔗 Link: {$item['url']}" . PHP_EOL;
 
 
+            if ($chatIDAll && $botTokenAll) {
+                sendTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
+            }
+            if ($chatID && $botToken) {
+                sendTelegramMessage($mensagem, $chatID, $botToken);
+            }
+        }
+    }
+}
+
+function sendTelegramMessage($mensagem, $chatID,  $botToken)
+{
     // URL da API do Telegram para enviar mensagens
     $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
 
@@ -321,6 +389,8 @@ function sendTelegramMessage($mensagem)
         'text' => $mensagem,
         'parse_mode' => 'HTML',
     ];
+
+    echo "<p><pre>$mensagem</pre><p>";
 
     // Inicializa o cURL
     $ch = curl_init();
@@ -482,54 +552,12 @@ try {
 
         // Gera modificações
         $modificacoes = gerarModificacoes($data, $dadosAntigos);
+        processaModificacoes($modificacoes);
 
         // Salva arquivo completo
         $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         file_put_contents('concursos.json', $json);
 
-        // Salva apenas modificações (se houver)
-        if (!empty($modificacoes)) {
-            $jsonModificacoes = json_encode($modificacoes, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            file_put_contents('modificacoes.json', $jsonModificacoes);
-
-            // Adiciona timestamp e log das modificações
-            $log = [
-                'timestamp' => date('Y-m-d H:i:s'),
-                'total_modificacoes' => 0,
-                'detalhes' => []
-            ];
-
-            foreach ($modificacoes as $regiao => $concursos) {
-                $statusCount = [];
-                foreach ($concursos as $slug => $concurso) {
-                    $status = $concurso['status'];
-                    if (!isset($statusCount[$status])) {
-                        $statusCount[$status] = 0;
-                    }
-                    $statusCount[$status]++;
-                    $log['total_modificacoes']++;
-                }
-                $log['detalhes'][$regiao] = $statusCount;
-            }
-
-            file_put_contents('modificacoes_log.json', json_encode($log, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-
-            echo "\n📝 Modificações detectadas:\n";
-            foreach ($log['detalhes'] as $regiao => $stats) {
-                echo "  $regiao: ";
-                $parts = [];
-                if (isset($stats['novo'])) $parts[] = "{$stats['novo']} novos";
-                if (isset($stats['modificado'])) $parts[] = "{$stats['modificado']} modificados";
-                if (isset($stats['removido'])) $parts[] = "{$stats['removido']} removidos";
-                echo implode(', ', $parts) . "\n";
-            }
-        } else {
-            echo "\n✅ Nenhuma modificação detectada.\n";
-            // Remove arquivo de modificações se estiver vazio
-            if (file_exists('modificacoes.json')) {
-                unlink('modificacoes.json');
-            }
-        }
 
         // Se chegou aqui sem erros, remove o arquivo de erro se existir
         if (file_exists('erro.json')) {
@@ -538,6 +566,8 @@ try {
         if (file_exists('ultimo_erro.log')) {
             unlink('ultimo_erro.log');
         }
+
+        echo "✅ Fim do processamento";
     } else {
         throw new Exception("Div com id 'concursos' não encontrada na página.");
     }
