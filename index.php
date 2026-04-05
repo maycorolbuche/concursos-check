@@ -234,16 +234,21 @@ function processaModificacoes($modificacoes)
         $botToken = $env['telegram'][strtolower($uf)]['bot_token'] ?? null;
 
         foreach ($data as $item) {
-            if ($item["status"] != "novo" && $item["status"] != "modificado") {
+            /*if ($item["status"] != "novo" && $item["status"] != "modificado") {
                 continue;
-            }
+            }*/
 
             $mensagem = "";
             $mensagem .= "═════════════════" . PHP_EOL;
             $mensagem .= "<b>"
-                . ($item["status"] == "novo"
+                . (
+                    $item["status"] == "novo"
                     ? "🆕 NOVO CONCURSO"
-                    : "📝 CONCURSO ATUALIZADO"
+                    : (
+                        $item["status"] == "modificado"
+                        ? "📝 CONCURSO ATUALIZADO"
+                        : "❌ CONCURSO REMOVIDO"
+                    )
                 )
                 . "</b>" . PHP_EOL;
             $mensagem .= "═════════════════" . PHP_EOL;
@@ -285,11 +290,10 @@ function processaModificacoes($modificacoes)
             $mensagem .= "🔗 Link: {$item['url']}" . PHP_EOL;
 
 
-            if ($chatIDAll && $botTokenAll) {
-                sendTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
-            }
-            if ($chatID && $botToken) {
+            if ($chatID && $botToken && $item["status"] == "novo" && $item["status"] == "modificado") {
                 sendTelegramMessage($mensagem, $chatID, $botToken);
+            } elseif ($chatIDAll && $botTokenAll) {
+                sendTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
             }
         }
     }
