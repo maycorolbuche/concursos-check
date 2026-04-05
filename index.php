@@ -290,7 +290,7 @@ function processaModificacoes($modificacoes)
             $mensagem .= "🔗 Link: {$item['url']}" . PHP_EOL;
 
 
-            if ($chatID && $botToken && $item["status"] == "novo" && $item["status"] == "modificado") {
+            if ($chatID && $botToken && ($item["status"] == "novo" || $item["status"] == "modificado")) {
                 sendTelegramMessage($mensagem, $chatID, $botToken);
             } elseif ($chatIDAll && $botTokenAll) {
                 sendTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
