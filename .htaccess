@@ -13,7 +13,7 @@ RewriteRule ^\.git - [F,L]
 
 # Bloquear arquivos sensíveis
 
-<FilesMatch "^(\.env|\.htpasswd|\.user\.ini|wp-config\.php|config\.php|info\.php|phpinfo\.php)">
+<FilesMatch "^(\.env|\.htpasswd|\.user\.ini|wp-config\.php|config\.php|info\.php|phpinfo\.php|.*\.json)">
     Require all denied
 </FilesMatch>
 
