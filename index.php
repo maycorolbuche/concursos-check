@@ -234,9 +234,19 @@ function processaModificacoes($modificacoes)
         $botToken = $env['telegram'][strtolower($uf)]['bot_token'] ?? null;
 
         foreach ($data as $item) {
-            /*if ($item["status"] != "novo" && $item["status"] != "modificado") {
+            if (
+                $item["status"] == "modificado"
+                && $item['anterior']['titulo'] == $item['titulo']
+                && $item['anterior']['cargo'] == $item['cargo']
+                && $item['anterior']['vagas'] == $item['vagas']
+                && $item['anterior']['salario'] == $item['salario']
+                && $item['anterior']['nivel'] == $item['nivel']
+                && $item['anterior']['local'] == $item['local']
+                && $item['anterior']['data'] == $item['data']
+                && $item['anterior']['url'] == $item['url']
+            ) {
                 continue;
-            }*/
+            }
 
             $mensagem = "";
             $mensagem .= "═════════════════" . PHP_EOL;
@@ -287,7 +297,7 @@ function processaModificacoes($modificacoes)
                 }
             }
 
-            $mensagem .= "🔗 Link: {$item['url']}" . PHP_EOL;
+            $mensagem .= "🔗 Link: " . t($item['anterior']['url'] ?? null, $item['url']) . PHP_EOL;
 
 
             if ($chatID && $botToken && ($item["status"] == "novo" || $item["status"] == "modificado")) {
