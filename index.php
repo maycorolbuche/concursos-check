@@ -611,7 +611,7 @@ try {
                     }
 
                     $title =  $xpath->query(".//a", $div)->item(0)->textContent ?? null;
-                    $slug = toSlug($title . '-' . $detail['cargo'] . '-' . $detail['nivel']);
+                    $slug = toSlug($uf . '-' . $title . '-' . $detail['cargo'] . '-' . $detail['nivel']);
 
                     $data[$lid][$slug] = [
                         'titulo' => $title,
