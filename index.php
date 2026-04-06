@@ -126,7 +126,7 @@ function toSlug($title)
     $slug = preg_replace('/[ñ]/u', 'n', $slug);
 
     // Remove caracteres especiais e mantém apenas letras, números e espaços
-    $slug = preg_replace('/[^a-z0-9\s]/', '', $slug);
+    $slug = preg_replace('/[^a-z0-9-\s]/', '', $slug);
 
     // Substitui espaços por hífen
     $slug = preg_replace('/\s+/', '-', $slug);
@@ -385,101 +385,102 @@ try {
                 $url = $div->getAttribute('data-url');
                 if ($url) {
                     $title =  $xpath->query(".//a", $div)->item(0)->textContent ?? null;
-                    if ($title) {
-                        $slug = toSlug($title);
+                    $slug = toSlug($title);
 
-                        $image =  $xpath->query(".//img", $div)->item(0)->getAttribute('data-src') ?? null;
+                    $image =  $xpath->query(".//img", $div)->item(0)->getAttribute('data-src') ?? null;
 
 
-                        $detail = [
-                            'vagas' => null,
-                            'salario' => null,
-                            'cadastro_reserva' => false,
-                            'cargo' => null,
-                            'nivel' => null,
-                            'uf' => null,
-                            'data' => null,
-                            'data_prorrogada' => false,
-                            'data_raw' => null
-                        ];
+                    $detail = [
+                        'vagas' => null,
+                        'salario' => null,
+                        'cadastro_reserva' => false,
+                        'cargo' => null,
+                        'nivel' => null,
+                        'uf' => null,
+                        'data' => null,
+                        'data_prorrogada' => false,
+                        'data_raw' => null
+                    ];
 
-                        // Extrai CD (vagas, salário, cargo, nível)
-                        $cdDiv = $xpath->query(".//div[@class='cd']", $div);
-                        if ($cdDiv->length > 0) {
-                            $textoCD = $cdDiv->item(0)->textContent;
+                    // Extrai CD (vagas, salário, cargo, nível)
+                    $cdDiv = $xpath->query(".//div[@class='cd']", $div);
+                    if ($cdDiv->length > 0) {
+                        $textoCD = $cdDiv->item(0)->textContent;
 
-                            // Tenta extrair número de vagas
-                            if (preg_match('/(\d+(?:\.\d+)?)\s*vagas?/i', $textoCD, $match)) {
-                                $detail['vagas'] = $match[1];
-                            }
+                        // Tenta extrair número de vagas
+                        if (preg_match('/(\d+(?:\.\d+)?)\s*vagas?/i', $textoCD, $match)) {
+                            $detail['vagas'] = $match[1];
+                        }
 
-                            // Tenta extrair salário
-                            if (preg_match('/R\$[\s]*([\d\.]+,\d{2})/', $textoCD, $match)) {
-                                $detail['salario'] = 'R$ ' . $match[1];
-                            }
+                        // Tenta extrair salário
+                        if (preg_match('/R\$[\s]*([\d\.]+,\d{2})/', $textoCD, $match)) {
+                            $detail['salario'] = 'R$ ' . $match[1];
+                        }
 
-                            // Tenta extrair informação de cadastro reserva
-                            if (preg_match('/cadastro\s+(?:de\s+)?reserva/i', $textoCD)) {
-                                $detail['cadastro_reserva'] = true;
-                            }
+                        // Tenta extrair informação de cadastro reserva
+                        if (preg_match('/cadastro\s+(?:de\s+)?reserva/i', $textoCD)) {
+                            $detail['cadastro_reserva'] = true;
+                        }
 
-                            // Extrai spans para cargo e nível
-                            $spans = $xpath->query(".//span", $cdDiv->item(0));
-                            if ($spans->length > 0) {
-                                $primeiroSpan = $spans->item(0);
-                                $htmlSpan = $dom->saveHTML($primeiroSpan);
+                        // Extrai spans para cargo e nível
+                        $spans = $xpath->query(".//span", $cdDiv->item(0));
+                        if ($spans->length > 0) {
+                            $primeiroSpan = $spans->item(0);
+                            $htmlSpan = $dom->saveHTML($primeiroSpan);
 
-                                // Verifica se tem <br> no span
-                                if (strpos($htmlSpan, '<br') !== false) {
-                                    // Separa pelo <br>
-                                    $partes = preg_split('/<br\s*\/?>/i', $htmlSpan);
-                                    $detail['cargo'] = trim(strip_tags($partes[0]));
-                                    if (isset($partes[1])) {
-                                        $detail['nivel'] = trim(strip_tags($partes[1]));
-                                    }
-                                } else {
-                                    $detail['cargo'] = trim($primeiroSpan->textContent);
+                            // Verifica se tem <br> no span
+                            if (strpos($htmlSpan, '<br') !== false) {
+                                // Separa pelo <br>
+                                $partes = preg_split('/<br\s*\/?>/i', $htmlSpan);
+                                $detail['cargo'] = trim(strip_tags($partes[0]));
+                                if (isset($partes[1])) {
+                                    $detail['nivel'] = trim(strip_tags($partes[1]));
                                 }
+                            } else {
+                                $detail['cargo'] = trim($primeiroSpan->textContent);
+                            }
 
-                                // Se ainda não tem nível e existe segundo span
-                                if (!isset($detail['nivel']) && $spans->length > 1) {
-                                    $detail['nivel'] = trim($spans->item(1)->textContent);
-                                }
+                            // Se ainda não tem nível e existe segundo span
+                            if (!isset($detail['nivel']) && $spans->length > 1) {
+                                $detail['nivel'] = trim($spans->item(1)->textContent);
                             }
                         }
-
-                        // Extrai CE (data)
-                        $ceDiv = $xpath->query(".//div[@class='ce']", $div);
-                        if ($ceDiv->length > 0) {
-                            $textoCE = trim($ceDiv->item(0)->textContent);
-                            $detail['data_raw'] = $textoCE;
-
-                            if (preg_match('/(\d{2}\/\d{2}\/\d{4})/', $textoCE, $match)) {
-                                $detail['data'] = $match[1];
-                            }
-
-                            if (strpos($textoCE, 'Prorrogado') !== false) {
-                                $detail['data_prorrogada'] = true;
-                            }
-                        }
-
-                        // Extrai CC (UF)
-                        $ccDiv = $xpath->query(".//div[@class='cc']", $div);
-                        if ($ccDiv->length > 0) {
-                            $uf = trim($ccDiv->item(0)->textContent);
-                            if ($uf && $uf != '') {
-                                $detail['uf'] = $uf;
-                            }
-                        }
-
-                        $data[$lid][$slug] = [
-                            'titulo' => $title,
-                            'url' => $url,
-                            'imagem' => $image,
-                            ...$detail,
-                            'html' => $dom->saveHTML($div)
-                        ];
                     }
+
+                    // Extrai CE (data)
+                    $ceDiv = $xpath->query(".//div[@class='ce']", $div);
+                    if ($ceDiv->length > 0) {
+                        $textoCE = trim($ceDiv->item(0)->textContent);
+                        $detail['data_raw'] = $textoCE;
+
+                        if (preg_match('/(\d{2}\/\d{2}\/\d{4})/', $textoCE, $match)) {
+                            $detail['data'] = $match[1];
+                        }
+
+                        if (strpos($textoCE, 'Prorrogado') !== false) {
+                            $detail['data_prorrogada'] = true;
+                        }
+                    }
+
+                    // Extrai CC (UF)
+                    $ccDiv = $xpath->query(".//div[@class='cc']", $div);
+                    if ($ccDiv->length > 0) {
+                        $uf = trim($ccDiv->item(0)->textContent);
+                        if ($uf && $uf != '') {
+                            $detail['uf'] = $uf;
+                        }
+                    }
+
+                    $title =  $xpath->query(".//a", $div)->item(0)->textContent ?? null;
+                    $slug = toSlug($title . '-' . $detail['cargo'] . '-' . $detail['nivel']);
+
+                    $data[$lid][$slug] = [
+                        'titulo' => $title,
+                        'url' => $url,
+                        'imagem' => $image,
+                        ...$detail,
+                        'html' => $dom->saveHTML($div)
+                    ];
                 }
             }
         }
