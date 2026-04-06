@@ -1,4 +1,10 @@
 <?php
+
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+echo "<pre>";
+
 class WebScraper
 {
     private $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
@@ -301,13 +307,146 @@ function processaModificacoes($modificacoes)
 
 
             if ($chatID && $botToken && ($item["status"] == "novo" || $item["status"] == "modificado")) {
-                sendTelegramMessage($mensagem, $chatID, $botToken);
+                sendQueueTelegramMessage($mensagem, $chatID, $botToken);
             } elseif ($chatIDAll && $botTokenAll) {
-                sendTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
+                sendQueueTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
             }
         }
     }
 }
+
+function sendQueueTelegramMessage($mensagem, $chatID,  $botToken)
+{
+    $arquivoFila = 'telegram_queue.json';
+
+    // Carrega fila existente
+    $fila = [];
+    if (file_exists($arquivoFila)) {
+        $conteudo = file_get_contents($arquivoFila);
+        $fila = json_decode($conteudo, true) ?? [];
+    }
+
+    // Adiciona nova mensagem à fila
+    $fila[] = [
+        'id' => uniqid('msg_', true),
+        'timestamp' => date('Y-m-d H:i:s'),
+        'chat_id' => $chatID,
+        'bot_token' => $botToken,
+        'mensagem' => $mensagem,
+        'status' => 'pendente',
+        'tentativas' => 0
+    ];
+
+    // Salva fila atualizada
+    file_put_contents($arquivoFila, json_encode($fila, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+    echo "📝 Mensagem adicionada à fila. Total na fila: " . count($fila) . "\n";
+}
+
+function processQueueTelegramMessage()
+{
+    $arquivoFila = 'telegram_queue.json';
+    $timeoutSegundos = 300;
+
+    $inicio = time();
+    $mensagensProcessadas = 0;
+    $mensagensSucesso = 0;
+    $mensagensFalha = 0;
+
+    echo "🚀 Iniciando processamento da fila com timeout de {$timeoutSegundos} segundos...\n";
+    echo str_repeat("=", 60) . "\n";
+
+    while (true) {
+        // Verifica timeout
+        $tempoDecorrido = time() - $inicio;
+        if ($tempoDecorrido > $timeoutSegundos) {
+            echo "\n⏰ Timeout de {$timeoutSegundos} segundos atingido. Encerrando...\n";
+            echo "Tempo decorrido: {$tempoDecorrido} segundos\n";
+            break;
+        }
+
+        // Carrega a fila
+        if (!file_exists($arquivoFila)) {
+            echo "📭 Arquivo de fila não encontrado. Nenhuma mensagem para processar.\n";
+            break;
+        }
+
+        $conteudo = file_get_contents($arquivoFila);
+        $fila = json_decode($conteudo, true) ?? [];
+
+        // Se não há mensagens na fila, encerra
+        if (empty($fila)) {
+            echo "📭 Fila vazia. Nenhuma mensagem pendente.\n";
+            break;
+        }
+
+        // Filtra apenas mensagens pendentes
+        $pendentes = array_filter($fila, fn($item) => $item['status'] === 'pendente');
+
+        if (empty($pendentes)) {
+            echo "📭 Nenhuma mensagem pendente na fila.\n";
+            break;
+        }
+
+        // Pega a primeira mensagem pendente
+        $primeiraMsg = reset($pendentes);
+        $indice = array_search($primeiraMsg, $fila);
+
+        $mensagensProcessadas++;
+        $tempoRestante = $timeoutSegundos - $tempoDecorrido;
+
+        echo "\n📤 [" . $mensagensProcessadas . "] Processando mensagem:\n";
+        echo "   ID: {$primeiraMsg['id']}\n";
+        echo "   Chat: {$primeiraMsg['chat_id']}\n";
+        echo "   Tentativas: {$primeiraMsg['tentativas']}/3\n";
+        echo "   Tempo restante: " . gmdate("i:s", $tempoRestante) . "\n";
+
+        // Tenta enviar
+        $erro = sendTelegramMessage(
+            $primeiraMsg['mensagem'],
+            $primeiraMsg['chat_id'],
+            $primeiraMsg['bot_token']
+        );
+
+        // Atualiza ou remove baseado no resultado
+        if (empty($erro)) {
+            // Enviado com sucesso - REMOVE da fila
+            unset($fila[$indice]);
+            $mensagensSucesso++;
+            echo "   ✅ Mensagem enviada com sucesso! Removida da fila.\n";
+        } else {
+            // Falha no envio
+            $fila[$indice]['tentativas']++;
+            $fila[$indice]['ultimo_erro'] = $erro;
+            $fila[$indice]['ultima_tentativa'] = date('Y-m-d H:i:s');
+
+            if ($fila[$indice]['tentativas'] >= 3) {
+                // Falha definitiva - REMOVE da fila também
+                unset($fila[$indice]);
+                $mensagensFalha++;
+                echo "   ❌ Falha definitiva após 3 tentativas. Removida da fila.\n";
+                echo "   Erro: " . substr($erro, 0, 100) . "...\n";
+            } else {
+                // Mantém na fila para nova tentativa
+                echo "   ⚠️ Falha (tentativa {$fila[$indice]['tentativas']}/3). Mantida na fila.\n";
+                echo "   Erro: " . substr($erro, 0, 100) . "...\n";
+            }
+        }
+
+        // Reindexa o array (opcional, para manter índices limpos)
+        $fila = array_values($fila);
+
+        // Salva fila atualizada
+        file_put_contents($arquivoFila, json_encode($fila, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+
+        // Pequeno delay entre mensagens para não sobrecarregar a API
+        if (count($fila) > 0) {
+            usleep(500000); // 0.5 segundos
+        }
+    }
+}
+
+
 
 function sendTelegramMessage($mensagem, $chatID,  $botToken)
 {
@@ -525,3 +664,8 @@ try {
     echo "\n❌ ERRO: " . $mensagemErro . "\n";
     echo "📁 Erro salvo em erro.json\n";
 }
+
+
+processQueueTelegramMessage();
+
+echo "</pre>";
