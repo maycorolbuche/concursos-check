@@ -511,6 +511,7 @@ try {
         $lid = null;
         foreach ($items as $index => $div) {
 
+            /** @disregard P1013 */
             $id = $div->getAttribute('id');
             if ($id) {
                 $lid = $id;
@@ -521,11 +522,13 @@ try {
                     $data[$lid] = [];
                 }
 
+                /** @disregard P1013 */
                 $url = $div->getAttribute('data-url');
                 if ($url) {
                     $title =  $xpath->query(".//a", $div)->item(0)->textContent ?? null;
                     $slug = toSlug($title);
 
+                    /** @disregard P1013 */
                     $image =  $xpath->query(".//img", $div)->item(0)->getAttribute('data-src') ?? null;
 
 
