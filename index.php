@@ -604,6 +604,7 @@ try {
                         }
                     }
 
+                    $uf = "";
                     // Extrai CC (UF)
                     $ccDiv = $xpath->query(".//div[@class='cc']", $div);
                     if ($ccDiv->length > 0) {
