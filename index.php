@@ -241,15 +241,15 @@ function processaModificacoes($modificacoes)
 
         foreach ($data as $item) {
             if (
-                $item["status"] == "modificado"
-                && $item['anterior']['titulo'] == $item['titulo']
-                && $item['anterior']['cargo'] == $item['cargo']
-                && $item['anterior']['vagas'] == $item['vagas']
-                && $item['anterior']['salario'] == $item['salario']
-                && $item['anterior']['nivel'] == $item['nivel']
-                && $item['anterior']['local'] == $item['local']
-                && $item['anterior']['data'] == $item['data']
-                && $item['anterior']['url'] == $item['url']
+                @$item["status"] == "modificado"
+                && @$item['anterior']['titulo'] == @$item['titulo']
+                && @$item['anterior']['cargo'] == @$item['cargo']
+                && @$item['anterior']['vagas'] == @$item['vagas']
+                && @$item['anterior']['salario'] == @$item['salario']
+                && @$item['anterior']['nivel'] == @$item['nivel']
+                && @$item['anterior']['local'] == @$item['local']
+                && @$item['anterior']['data'] == @$item['data']
+                && @$item['anterior']['url'] == @$item['url']
             ) {
                 continue;
             }
