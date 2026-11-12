@@ -152,55 +152,92 @@ function escape(string $value): string
     return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 }
 
-function fieldText(mixed $value): string
+function comparedValue(?string $before, string $current, callable $format): string
 {
-    return is_bool($value) ? ($value ? 'Sim' : 'Não') : ((string) $value ?: '—');
+    $formatted = $format($current);
+    if ($before === null || $before === '' || $before === $current) {
+        return $formatted;
+    }
+    return '<s>' . $format($before) . '</s> → ' . $formatted;
 }
 
 function notification(string $kind, array $item, ?array $before = null): array
 {
     $heading = match ($kind) {
-        'novo' => '🆕 Novo concurso',
-        'modificado' => '📝 Concurso atualizado',
-        'removido' => '❌ Concurso removido da listagem',
+        'novo' => '🆕 NOVO CONCURSO',
+        'modificado' => '📝 CONCURSO ATUALIZADO',
+        'removido' => '❌ CONCURSO REMOVIDO',
     };
-    $url = escape($item['url']);
-    $lines = [$heading, '<b>' . escape($item['titulo']) . '</b>', "<a href=\"$url\">Ver no PCI Concursos</a>", ''];
-    if ($before === null) {
-        if ($item['regiao'] === 'NACIONAL') {
-            $lines[] = 'Abrangência: Nacional';
-        }
-        foreach (FIELDS as $key => $label) {
-            if ($key !== 'titulo' && !empty($item[$key])) {
-                $lines[] = $label . ': ' . escape(fieldText($item[$key]));
-            }
-        }
-    } else {
-        if ($before['regiao'] !== $item['regiao']) {
-            $lines[] = 'Seção: ' . escape($before['regiao']) . ' → ' . escape($item['regiao']);
-        }
-        foreach (FIELDS as $key => $label) {
-            if ($before[$key] !== $item[$key]) {
-                $lines[] = $label . ': <s>' . escape(fieldText($before[$key]))
-                    . '</s> → ' . escape(fieldText($item[$key]));
-            }
+    $separator = '═════════════════';
+    $title = comparedValue($before['titulo'] ?? null, $item['titulo'], 'escape');
+    $lines = [$separator, "<b>$heading</b>", $separator, '', "📌 $title", ''];
+
+    if ($item['cadastro_reserva']) {
+        $lines[] = '⚠️ CADASTRO RESERVA ⚠️';
+    }
+
+    $dateIcon = $item['data_prorrogada'] ? '⚠️' : '📅';
+    foreach ([
+        'cargo' => '💼 Cargo',
+        'vagas' => '📊 Vagas',
+        'salario' => '💰 Salário',
+        'nivel' => '🎓 Nível',
+        'regiao' => '📍 Local',
+        'data' => "$dateIcon Data limite",
+    ] as $key => $label) {
+        if ($item[$key] !== '') {
+            $lines[] = $label . ': ' . comparedValue($before[$key] ?? null, $item[$key], 'escape');
         }
     }
+    if ($item['data'] !== '' && $item['data_prorrogada']) {
+        $lines[] = '⚠️ Prorrogado!';
+    }
+
+    $lines[] = '🔗 Link: ' . comparedValue($before['url'] ?? null, $item['url'], static function (string $url): string {
+        $safe = escape($url);
+        return "<a href=\"$safe\">$safe</a>";
+    });
     return ['route' => route($item), 'message' => implode("\n", $lines), 'attempts' => 0];
+}
+
+function groupByContest(array $items): array
+{
+    $groups = [];
+    foreach ($items as $id => $item) {
+        $key = json_encode(
+            [$item['regiao'], $item['uf'], $item['titulo'], $item['cargo'], $item['nivel']],
+            JSON_THROW_ON_ERROR
+        );
+        $groups[$key][] = $id;
+    }
+    return $groups;
 }
 
 function changes(array $previous, array $current): array
 {
     $messages = [];
-    foreach ($current as $id => $item) {
-        if (!isset($previous[$id])) {
-            $messages[] = notification('novo', $item);
-        } elseif (array_intersect_key($item, FIELDS) != array_intersect_key($previous[$id], FIELDS)
-            || $item['regiao'] !== $previous[$id]['regiao']) {
-            $messages[] = notification('modificado', $item, $previous[$id]);
+    $removed = array_diff_key($previous, $current);
+    $added = array_diff_key($current, $previous);
+    $removedGroups = groupByContest($removed);
+    $relinked = [];
+    foreach (groupByContest($added) as $key => $newIds) {
+        $oldIds = $removedGroups[$key] ?? [];
+        if (count($newIds) === 1 && count($oldIds) === 1) {
+            $relinked[$newIds[0]] = $removed[$oldIds[0]];
+            unset($removed[$oldIds[0]]);
         }
     }
-    foreach (array_diff_key($previous, $current) as $item) {
+
+    $tracked = FIELDS + ['regiao' => true, 'url' => true];
+    foreach ($current as $id => $item) {
+        $before = $previous[$id] ?? $relinked[$id] ?? null;
+        if ($before === null) {
+            $messages[] = notification('novo', $item);
+        } elseif (array_intersect_key($item, $tracked) != array_intersect_key($before, $tracked)) {
+            $messages[] = notification('modificado', $item, $before);
+        }
+    }
+    foreach ($removed as $item) {
         $messages[] = notification('removido', $item);
     }
     return $messages;

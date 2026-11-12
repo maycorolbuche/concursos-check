@@ -45,14 +45,63 @@ expect(credentials('SP') === ['estado', '-2'] && credentials('NACIONAL') === ['g
 
 $updated = parseListing(str_replace('Até <span>', 'Prorrogado até <span>', $html));
 $messages = changes($items, $updated);
-expect(count($messages) === 1 && str_contains($messages[0]['message'], 'Prazo prorrogado'), 'Prorrogação deve gerar aviso');
+expect(count($messages) === 1 && str_contains($messages[0]['message'], '⚠️ Prorrogado!'), 'Prorrogação deve gerar aviso');
 $updated = $items;
 $updated['/noticias/municipal']['cadastro_reserva'] = true;
 $messages = changes($items, $updated);
-expect(count($messages) === 1 && str_contains($messages[0]['message'], 'Cadastro reserva'), 'Cadastro reserva deve gerar aviso');
+expect(count($messages) === 1 && str_contains($messages[0]['message'], '⚠️ CADASTRO RESERVA ⚠️'), 'Cadastro reserva deve gerar aviso');
 $messages = changes($items, ['/noticias/nacional' => $nacional]);
 expect(count($messages) === 1 && $messages[0]['route'] === 'SP' && str_contains($messages[0]['message'], '&amp;'), 'Remoção e escape de HTML');
 expect(changes($items, $items) === [], 'Repetição não gera avisos');
+
+$expectedNew = <<<'MESSAGE'
+═════════════════
+<b>🆕 NOVO CONCURSO</b>
+═════════════════
+
+📌 Prefeitura &amp; Câmara
+
+💼 Cargo: Motorista
+🎓 Nível: Médio
+📍 Local: SP
+🔗 Link: <a href="https://www.pciconcursos.com.br/noticias/municipal">https://www.pciconcursos.com.br/noticias/municipal</a>
+MESSAGE;
+expect(notification('novo', $sp)['message'] === $expectedNew, 'Layout legado de concurso novo');
+expect(notification('removido', $sp)['message'] === str_replace(
+    '🆕 NOVO CONCURSO', '❌ CONCURSO REMOVIDO', $expectedNew
+), 'Layout legado de concurso removido');
+
+$relocated = $sp;
+$relocated['url'] = 'https://www.pciconcursos.com.br/noticias/municipal-prorrogado';
+$relocated['data'] = '05/11/2026';
+$relocated['data_prorrogada'] = true;
+$relocated['cadastro_reserva'] = true;
+$messages = changes($items, ['/noticias/nacional' => $nacional, '/noticias/municipal-prorrogado' => $relocated]);
+$expectedUpdated = <<<'MESSAGE'
+═════════════════
+<b>📝 CONCURSO ATUALIZADO</b>
+═════════════════
+
+📌 Prefeitura &amp; Câmara
+
+⚠️ CADASTRO RESERVA ⚠️
+💼 Cargo: Motorista
+🎓 Nível: Médio
+📍 Local: SP
+⚠️ Data limite: 05/11/2026
+⚠️ Prorrogado!
+🔗 Link: <s><a href="https://www.pciconcursos.com.br/noticias/municipal">https://www.pciconcursos.com.br/noticias/municipal</a></s> → <a href="https://www.pciconcursos.com.br/noticias/municipal-prorrogado">https://www.pciconcursos.com.br/noticias/municipal-prorrogado</a>
+MESSAGE;
+expect(count($messages) === 1 && $messages[0]['message'] === $expectedUpdated, 'Layout legado com troca de link');
+
+$second = $relocated;
+$second['url'] = 'https://www.pciconcursos.com.br/noticias/municipal-alternativo';
+$messages = changes($items, [
+    '/noticias/nacional' => $nacional,
+    '/noticias/municipal-prorrogado' => $relocated,
+    '/noticias/municipal-alternativo' => $second,
+]);
+expect(count($messages) === 3, 'Troca ambígua de link mantém os anúncios independentes');
 
 try {
     parseListing('<div id="concursos"></div>');
