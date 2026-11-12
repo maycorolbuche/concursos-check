@@ -280,7 +280,6 @@ function sendQueue(string $path): int
                 'chat_id' => $chat,
                 'text' => $notice['message'],
                 'parse_mode' => 'HTML',
-                'link_preview_options' => ['is_disabled' => true],
             ]);
         } catch (RuntimeException $error) {
             fwrite(STDERR, $error->getMessage() . "\n");
