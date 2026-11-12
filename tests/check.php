@@ -42,6 +42,11 @@ putenv('TELEGRAM_CHAT_ID_SP');
 expect(credentials('SP') === ['geral', '-1'], 'Par regional incompleto deve usar o geral');
 putenv('TELEGRAM_CHAT_ID_SP=-2');
 expect(credentials('SP') === ['estado', '-2'] && credentials('NACIONAL') === ['geral', '-1'], 'Destinos por tipo');
+putenv('TELEGRAM_BOT_TOKEN_BR=nacional');
+putenv('TELEGRAM_CHAT_ID_BR');
+expect(credentials('NACIONAL') === ['geral', '-1'], 'Par BR incompleto deve usar o geral');
+putenv('TELEGRAM_CHAT_ID_BR=-3');
+expect(credentials('NACIONAL') === ['nacional', '-3'], 'Rota nacional deve usar os secrets BR');
 
 $updated = parseListing(str_replace('Até <span>', 'Prorrogado até <span>', $html));
 $messages = changes($items, $updated);
