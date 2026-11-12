@@ -51,7 +51,7 @@ Expressão sugerida no Worker: `2,17,32,47 * * * *`. Confira os disparos
    → Run workflow** na `main` com `dry_run` marcado para validar só a coleta.
 2. Rode novamente com `dry_run` desmarcado. A primeira coleta válida grava uma
    referência sem anunciar todos os concursos existentes. A branch `state`
-   é criada automaticamente com o snapshot e a fila, sem credenciais.
+   é criada automaticamente e mantém um único commit com o snapshot e a fila atuais, sem credenciais.
 3. Ative o cron da Cloudflare e confirme uma execução completa. Depois,
    desative o cron da hospedagem antiga.
 
