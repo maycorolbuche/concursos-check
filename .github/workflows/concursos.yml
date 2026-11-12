@@ -1,0 +1,132 @@
+name: Verificar concursos e avisar no Telegram
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Validar a coleta sem alterar o estado nem enviar avisos
+        type: boolean
+        default: false
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: curl, dom
+          coverage: none
+      - run: php -l index.php && php tests/check.php && bash -n bin/state.sh
+      - name: Validar coleta real
+        run: php index.php check
+
+  monitor:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: concursos-check-state
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: curl, dom
+          coverage: none
+      - name: Validar somente a coleta
+        if: inputs.dry_run
+        run: php index.php check
+      - name: Coletar concursos e gravar fila
+        id: collect
+        if: '!inputs.dry_run'
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          bash bin/state.sh load
+          php index.php collect "$RUNNER_TEMP/concursos-state/state.json"
+          bash bin/state.sh save
+          echo "persisted=true" >> "$GITHUB_OUTPUT"
+      - name: Enviar avisos pendentes
+        if: ${{ !cancelled() && steps.collect.outputs.persisted == 'true' }}
+        env:
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN_NACIONAL: ${{ secrets.TELEGRAM_BOT_TOKEN_NACIONAL }}
+          TELEGRAM_CHAT_ID_NACIONAL: ${{ secrets.TELEGRAM_CHAT_ID_NACIONAL }}
+          TELEGRAM_BOT_TOKEN_AC: ${{ secrets.TELEGRAM_BOT_TOKEN_AC }}
+          TELEGRAM_CHAT_ID_AC: ${{ secrets.TELEGRAM_CHAT_ID_AC }}
+          TELEGRAM_BOT_TOKEN_AL: ${{ secrets.TELEGRAM_BOT_TOKEN_AL }}
+          TELEGRAM_CHAT_ID_AL: ${{ secrets.TELEGRAM_CHAT_ID_AL }}
+          TELEGRAM_BOT_TOKEN_AP: ${{ secrets.TELEGRAM_BOT_TOKEN_AP }}
+          TELEGRAM_CHAT_ID_AP: ${{ secrets.TELEGRAM_CHAT_ID_AP }}
+          TELEGRAM_BOT_TOKEN_AM: ${{ secrets.TELEGRAM_BOT_TOKEN_AM }}
+          TELEGRAM_CHAT_ID_AM: ${{ secrets.TELEGRAM_CHAT_ID_AM }}
+          TELEGRAM_BOT_TOKEN_BA: ${{ secrets.TELEGRAM_BOT_TOKEN_BA }}
+          TELEGRAM_CHAT_ID_BA: ${{ secrets.TELEGRAM_CHAT_ID_BA }}
+          TELEGRAM_BOT_TOKEN_CE: ${{ secrets.TELEGRAM_BOT_TOKEN_CE }}
+          TELEGRAM_CHAT_ID_CE: ${{ secrets.TELEGRAM_CHAT_ID_CE }}
+          TELEGRAM_BOT_TOKEN_DF: ${{ secrets.TELEGRAM_BOT_TOKEN_DF }}
+          TELEGRAM_CHAT_ID_DF: ${{ secrets.TELEGRAM_CHAT_ID_DF }}
+          TELEGRAM_BOT_TOKEN_ES: ${{ secrets.TELEGRAM_BOT_TOKEN_ES }}
+          TELEGRAM_CHAT_ID_ES: ${{ secrets.TELEGRAM_CHAT_ID_ES }}
+          TELEGRAM_BOT_TOKEN_GO: ${{ secrets.TELEGRAM_BOT_TOKEN_GO }}
+          TELEGRAM_CHAT_ID_GO: ${{ secrets.TELEGRAM_CHAT_ID_GO }}
+          TELEGRAM_BOT_TOKEN_MA: ${{ secrets.TELEGRAM_BOT_TOKEN_MA }}
+          TELEGRAM_CHAT_ID_MA: ${{ secrets.TELEGRAM_CHAT_ID_MA }}
+          TELEGRAM_BOT_TOKEN_MT: ${{ secrets.TELEGRAM_BOT_TOKEN_MT }}
+          TELEGRAM_CHAT_ID_MT: ${{ secrets.TELEGRAM_CHAT_ID_MT }}
+          TELEGRAM_BOT_TOKEN_MS: ${{ secrets.TELEGRAM_BOT_TOKEN_MS }}
+          TELEGRAM_CHAT_ID_MS: ${{ secrets.TELEGRAM_CHAT_ID_MS }}
+          TELEGRAM_BOT_TOKEN_MG: ${{ secrets.TELEGRAM_BOT_TOKEN_MG }}
+          TELEGRAM_CHAT_ID_MG: ${{ secrets.TELEGRAM_CHAT_ID_MG }}
+          TELEGRAM_BOT_TOKEN_PA: ${{ secrets.TELEGRAM_BOT_TOKEN_PA }}
+          TELEGRAM_CHAT_ID_PA: ${{ secrets.TELEGRAM_CHAT_ID_PA }}
+          TELEGRAM_BOT_TOKEN_PB: ${{ secrets.TELEGRAM_BOT_TOKEN_PB }}
+          TELEGRAM_CHAT_ID_PB: ${{ secrets.TELEGRAM_CHAT_ID_PB }}
+          TELEGRAM_BOT_TOKEN_PR: ${{ secrets.TELEGRAM_BOT_TOKEN_PR }}
+          TELEGRAM_CHAT_ID_PR: ${{ secrets.TELEGRAM_CHAT_ID_PR }}
+          TELEGRAM_BOT_TOKEN_PE: ${{ secrets.TELEGRAM_BOT_TOKEN_PE }}
+          TELEGRAM_CHAT_ID_PE: ${{ secrets.TELEGRAM_CHAT_ID_PE }}
+          TELEGRAM_BOT_TOKEN_PI: ${{ secrets.TELEGRAM_BOT_TOKEN_PI }}
+          TELEGRAM_CHAT_ID_PI: ${{ secrets.TELEGRAM_CHAT_ID_PI }}
+          TELEGRAM_BOT_TOKEN_RJ: ${{ secrets.TELEGRAM_BOT_TOKEN_RJ }}
+          TELEGRAM_CHAT_ID_RJ: ${{ secrets.TELEGRAM_CHAT_ID_RJ }}
+          TELEGRAM_BOT_TOKEN_RN: ${{ secrets.TELEGRAM_BOT_TOKEN_RN }}
+          TELEGRAM_CHAT_ID_RN: ${{ secrets.TELEGRAM_CHAT_ID_RN }}
+          TELEGRAM_BOT_TOKEN_RS: ${{ secrets.TELEGRAM_BOT_TOKEN_RS }}
+          TELEGRAM_CHAT_ID_RS: ${{ secrets.TELEGRAM_CHAT_ID_RS }}
+          TELEGRAM_BOT_TOKEN_RO: ${{ secrets.TELEGRAM_BOT_TOKEN_RO }}
+          TELEGRAM_CHAT_ID_RO: ${{ secrets.TELEGRAM_CHAT_ID_RO }}
+          TELEGRAM_BOT_TOKEN_RR: ${{ secrets.TELEGRAM_BOT_TOKEN_RR }}
+          TELEGRAM_CHAT_ID_RR: ${{ secrets.TELEGRAM_CHAT_ID_RR }}
+          TELEGRAM_BOT_TOKEN_SC: ${{ secrets.TELEGRAM_BOT_TOKEN_SC }}
+          TELEGRAM_CHAT_ID_SC: ${{ secrets.TELEGRAM_CHAT_ID_SC }}
+          TELEGRAM_BOT_TOKEN_SP: ${{ secrets.TELEGRAM_BOT_TOKEN_SP }}
+          TELEGRAM_CHAT_ID_SP: ${{ secrets.TELEGRAM_CHAT_ID_SP }}
+          TELEGRAM_BOT_TOKEN_SE: ${{ secrets.TELEGRAM_BOT_TOKEN_SE }}
+          TELEGRAM_CHAT_ID_SE: ${{ secrets.TELEGRAM_CHAT_ID_SE }}
+          TELEGRAM_BOT_TOKEN_TO: ${{ secrets.TELEGRAM_BOT_TOKEN_TO }}
+          TELEGRAM_CHAT_ID_TO: ${{ secrets.TELEGRAM_CHAT_ID_TO }}
+        run: |
+          result=0
+          php index.php send "$RUNNER_TEMP/concursos-state/state.json" || result=$?
+          bash bin/state.sh save
+          exit "$result"

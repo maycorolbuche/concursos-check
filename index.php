@@ -1,675 +1,320 @@
 <?php
 
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+declare(strict_types=1);
 
-echo "<pre>";
+const SOURCE = 'https://www.pciconcursos.com.br/concursos/';
+const ROUTES = ['NACIONAL', 'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
+const FIELDS = [
+    'titulo' => 'Título', 'uf' => 'UF', 'cargo' => 'Cargo', 'vagas' => 'Vagas',
+    'salario' => 'Salário', 'nivel' => 'Nível', 'cadastro_reserva' => 'Cadastro reserva',
+    'data' => 'Prazo', 'data_prorrogada' => 'Prazo prorrogado',
+];
 
-class WebScraper
+function request(string $url, ?array $body = null): array
 {
-    private $userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
-
-    public function getContent($url, $timeout = 30)
-    {
-        // Valida URL
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
-            throw new Exception("URL inválida: " . $url);
-        }
-
-        $ch = curl_init();
-
-        $config = [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_TIMEOUT => $timeout,
-            CURLOPT_USERAGENT => $this->userAgent,
-            CURLOPT_SSL_VERIFYPEER => false, // Para HTTPS
-            CURLOPT_ENCODING => '', // Aceita compressão
-            CURLOPT_MAXREDIRS => 10 // Máximo de redirecionamentos
-        ];
-
-        curl_setopt_array($ch, $config);
-
-        $content = curl_exec($ch);
-        $info = curl_getinfo($ch);
-        $erro = curl_error($ch);
-
-        curl_close($ch);
-
-        if ($content === false) {
-            throw new Exception("Erro cURL: " . $erro);
-        }
-
-        if ($info['http_code'] != 200) {
-            throw new Exception("HTTP Error: " . $info['http_code']);
-        }
-
-        return $content;
+    $curl = curl_init($url);
+    curl_setopt_array($curl, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => $body === null,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_CONNECTTIMEOUT => 8,
+        CURLOPT_TIMEOUT => $body === null ? 30 : 10,
+        CURLOPT_ENCODING => '',
+        CURLOPT_USERAGENT => 'ConcursosCheck/1.0',
+    ]);
+    if ($body !== null) {
+        curl_setopt_array($curl, [
+            CURLOPT_POST => true,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS => json_encode($body, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE),
+        ]);
     }
-
-    public function text($html)
-    {
-        // Remove tags HTML
-        $texto = strip_tags($html);
-        // Remove espaços extras
-        $texto = preg_replace('/\s+/', ' ', $texto);
-        // Remove espaços no início e fim
-        $texto = trim($texto);
-
-        return $texto;
+    $response = curl_exec($curl);
+    if ($response === false) {
+        throw new RuntimeException('Falha de transporte cURL, código ' . curl_errno($curl));
     }
-
-    // Novo método para extrair conteúdo de uma div específica
-    public function extractDivContent($html, $divId)
-    {
-        // Cria objeto DOM
-        $dom = new DOMDocument();
-        libxml_use_internal_errors(true); // Ignora erros de HTML mal formatado
-        $dom->loadHTML($html);
-        libxml_clear_errors();
-
-        // Cria objeto XPath
-        $xpath = new DOMXPath($dom);
-
-        // Busca a div pelo ID
-        $query = "//div[@id='$divId']";
-        $elements = $xpath->query($query);
-
-        if ($elements->length > 0) {
-            // Retorna o HTML interno da div encontrada
-            $divContent = '';
-            foreach ($elements as $element) {
-                $divContent .= $dom->saveHTML($element);
-            }
-            return $divContent;
-        }
-
-        return null; // Retorna null se não encontrar a div
-    }
-
-    // Método para extrair apenas o texto da div específica
-    public function extractDivText($html, $divId)
-    {
-        $divContent = $this->extractDivContent($html, $divId);
-        if ($divContent) {
-            return $this->text($divContent);
-        }
-        return null;
-    }
+    return [(int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE), $response];
 }
 
-function salvarErro($mensagemErro, $detalhes = [])
+function clean(?string $text): string
 {
-    $erro = [
-        'timestamp' => date('Y-m-d H:i:s'),
-        'mensagem' => $mensagemErro,
-        'detalhes' => $detalhes,
-        'ultimo_sucesso' => file_exists('concursos.json') ? date('Y-m-d H:i:s', filemtime('concursos.json')) : null
-    ];
-
-    // Sempre sobrescreve o arquivo de erro
-    file_put_contents('erro.json', json_encode($erro, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-
-    // Também salva em log simples para debug rápido (opcional)
-    $logSimples = date('Y-m-d H:i:s') . " - ERRO: " . $mensagemErro . PHP_EOL;
-    file_put_contents('ultimo_erro.log', $logSimples);
+    return trim(preg_replace('/[\s\x{00a0}]+/u', ' ', $text ?? '') ?? '');
 }
 
-
-function toSlug($title)
+function byClass(string $class): string
 {
-    // Converte para minúsculas
-    $slug = strtolower($title);
-
-    // Remove acentos (importante para URLs)
-    $slug = preg_replace('/[áàâãä]/u', 'a', $slug);
-    $slug = preg_replace('/[éèêë]/u', 'e', $slug);
-    $slug = preg_replace('/[íìîï]/u', 'i', $slug);
-    $slug = preg_replace('/[óòôõö]/u', 'o', $slug);
-    $slug = preg_replace('/[úùûü]/u', 'u', $slug);
-    $slug = preg_replace('/[ç]/u', 'c', $slug);
-    $slug = preg_replace('/[ñ]/u', 'n', $slug);
-
-    // Remove caracteres especiais e mantém apenas letras, números e espaços
-    $slug = preg_replace('/[^a-z0-9-\s]/', '', $slug);
-
-    // Substitui espaços por hífen
-    $slug = preg_replace('/\s+/', '-', $slug);
-
-    // Remove hífens duplicados
-    $slug = preg_replace('/-+/', '-', $slug);
-
-    // Remove hífens no início e no final
-    $slug = trim($slug, '-');
-
-    return $slug;
+    return "contains(concat(' ', normalize-space(@class), ' '), ' $class ')";
 }
 
-
-
-// Função para carregar dados anteriores
-function carregarDadosAnteriores($arquivo = 'concursos.json')
+function listingId(string $url): string
 {
-    if (file_exists($arquivo)) {
-        $conteudo = file_get_contents($arquivo);
-        return json_decode($conteudo, true);
+    $parts = parse_url($url);
+    if (!isset($parts['scheme'], $parts['host'], $parts['path'])
+        || !in_array($parts['scheme'], ['http', 'https'], true)
+        || !in_array(strtolower($parts['host']), ['www.pciconcursos.com.br', 'pciconcursos.com.br'], true)) {
+        throw new RuntimeException('A listagem contém um link de publicação inválido.');
     }
-    return null;
+    return rtrim($parts['path'], '/');
 }
 
-// Função para comparar dois itens e verificar se houve modificação
-function itemModificado($itemAntigo, $itemNovo)
+function parseListing(string $html): array
 {
-    // Remove o campo 'html' da comparação (opcional, se não quiser comparar o HTML)
-    unset($itemAntigo['html']);
-    unset($itemNovo['html']);
-
-    // Remove o campo 'status' se existir
-    unset($itemAntigo['status']);
-    unset($itemNovo['status']);
-
-    return $itemAntigo != $itemNovo;
-}
-
-// Função para gerar o arquivo de modificações
-function gerarModificacoes($dadosNovos, $dadosAntigos)
-{
-    $modificacoes = [];
-
-    if (!$dadosAntigos) {
-        // Primeira execução: todos os itens são novos
-        foreach ($dadosNovos as $regiao => $concursos) {
-            foreach ($concursos as $slug => $concurso) {
-                $concurso['status'] = 'novo';
-                $modificacoes[$regiao][$slug] = $concurso;
-            }
-        }
-        return $modificacoes;
-    }
-
-    // Verifica itens novos e modificados
-    foreach ($dadosNovos as $regiao => $concursos) {
-        foreach ($concursos as $slug => $concurso) {
-            if (!isset($dadosAntigos[$regiao][$slug])) {
-                // Item novo
-                $concurso['status'] = 'novo';
-                $modificacoes[$regiao][$slug] = $concurso;
-            } elseif (itemModificado($dadosAntigos[$regiao][$slug], $concurso)) {
-                // Item modificado
-                $concurso['status'] = 'modificado';
-                $concurso['anterior'] = $dadosAntigos[$regiao][$slug]; // Opcional: guarda versão anterior
-                $modificacoes[$regiao][$slug] = $concurso;
-            }
-        }
-    }
-
-    // Verifica itens removidos
-    foreach ($dadosAntigos as $regiao => $concursos) {
-        foreach ($concursos as $slug => $concurso) {
-            if (!isset($dadosNovos[$regiao][$slug])) {
-                // Item removido
-                $concurso['status'] = 'removido';
-                $modificacoes[$regiao][$slug] = $concurso;
-            }
-        }
-    }
-
-    return $modificacoes;
-}
-
-function t($old, $new)
-{
-    return $old !== null && $old != $new ? "<s>{$old}</s> → {$new}" : $new;
-}
-
-function processaModificacoes($modificacoes)
-{
-
-    $env = [];
-    if (file_exists("env.json")) {
-        $conteudo = file_get_contents("env.json");
-        $env = json_decode($conteudo, true);
-    }
-    $chatIDAll = $env['telegram']['all']['chat_id'] ?? null;
-    $botTokenAll = $env['telegram']['all']['bot_token'] ?? null;
-
-    foreach ($modificacoes as $uf => $data) {
-
-        $chatID = $env['telegram'][strtolower($uf)]['chat_id'] ?? null;
-        $botToken = $env['telegram'][strtolower($uf)]['bot_token'] ?? null;
-
-        foreach ($data as $item) {
-            if (
-                @$item["status"] == "modificado"
-                && @$item['anterior']['titulo'] == @$item['titulo']
-                && @$item['anterior']['cargo'] == @$item['cargo']
-                && @$item['anterior']['vagas'] == @$item['vagas']
-                && @$item['anterior']['salario'] == @$item['salario']
-                && @$item['anterior']['nivel'] == @$item['nivel']
-                && @$item['anterior']['local'] == @$item['local']
-                && @$item['anterior']['data'] == @$item['data']
-                && @$item['anterior']['url'] == @$item['url']
-            ) {
-                continue;
-            }
-
-            $mensagem = "";
-            $mensagem .= "═════════════════" . PHP_EOL;
-            $mensagem .= "<b>"
-                . (
-                    $item["status"] == "novo"
-                    ? "🆕 NOVO CONCURSO"
-                    : (
-                        $item["status"] == "modificado"
-                        ? "📝 CONCURSO ATUALIZADO"
-                        : "❌ CONCURSO REMOVIDO"
-                    )
-                )
-                . "</b>" . PHP_EOL;
-            $mensagem .= "═════════════════" . PHP_EOL;
-            $mensagem .= PHP_EOL;
-            $mensagem .= "📌 " . t($item['anterior']['titulo'] ?? null, $item['titulo']) . PHP_EOL . PHP_EOL;
-
-            if ($item['cadastro_reserva']) {
-                $mensagem .= "⚠️ CADASTRO RESERVA ⚠️" . PHP_EOL;
-            }
-
-            if (!empty($item['cargo'])) {
-                $mensagem .= "💼 Cargo: " . t($item['anterior']['cargo'] ?? null, $item['cargo']) . PHP_EOL;
-            }
-
-            if (!empty($item['vagas'])) {
-                $mensagem .= "📊 Vagas: " . t($item['anterior']['vagas'] ?? null, $item['vagas']) . PHP_EOL;
-            }
-
-            if (!empty($item['salario'])) {
-                $mensagem .= "💰 Salário: " . t($item['anterior']['salario'] ?? null, $item['salario']) . PHP_EOL;
-            }
-
-            if (!empty($item['nivel'])) {
-                $mensagem .= "🎓 Nível: " . t($item['anterior']['nivel'] ?? null, $item['nivel']) . PHP_EOL;
-            }
-
-            if (!empty($uf) && trim($uf) != '' && $uf != ' ') {
-                $mensagem .= "📍 Local: " . t($item['anterior']['local'] ?? null, $uf) . PHP_EOL;
-            }
-
-            $dataIcon = $item['data_prorrogada'] ? "⚠️" : "📅";
-            if (!empty($item['data'])) {
-                $mensagem .= "{$dataIcon} Data limite: " . t($item['anterior']['data'] ?? null, $item['data']) . PHP_EOL;
-                if ($item['data_prorrogada']) {
-                    $mensagem .= "⚠️ Prorrogado!" . PHP_EOL;
-                }
-            }
-
-            $mensagem .= "🔗 Link: " . t($item['anterior']['url'] ?? null, $item['url']) . PHP_EOL;
-
-
-            if ($chatID && $botToken && ($item["status"] == "novo" || $item["status"] == "modificado")) {
-                sendQueueTelegramMessage($mensagem, $chatID, $botToken);
-            } elseif ($chatIDAll && $botTokenAll) {
-                sendQueueTelegramMessage($mensagem, $chatIDAll, $botTokenAll);
-            }
-        }
-    }
-}
-
-function sendQueueTelegramMessage($mensagem, $chatID,  $botToken)
-{
-    $arquivoFila = 'telegram_queue.json';
-
-    // Carrega fila existente
-    $fila = [];
-    if (file_exists($arquivoFila)) {
-        $conteudo = file_get_contents($arquivoFila);
-        $fila = json_decode($conteudo, true) ?? [];
-    }
-
-    // Adiciona nova mensagem à fila
-    $fila[] = [
-        'id' => uniqid('msg_', true),
-        'timestamp' => date('Y-m-d H:i:s'),
-        'chat_id' => $chatID,
-        'bot_token' => $botToken,
-        'mensagem' => $mensagem,
-        'status' => 'pendente',
-        'tentativas' => 0
-    ];
-
-    // Salva fila atualizada
-    file_put_contents($arquivoFila, json_encode($fila, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-
-    echo "📝 Mensagem adicionada à fila. Total na fila: " . count($fila) . "\n";
-}
-
-function processQueueTelegramMessage()
-{
-    $arquivoFila = 'telegram_queue.json';
-    $timeoutSegundos = 300;
-
-    $inicio = time();
-    $mensagensProcessadas = 0;
-    $mensagensSucesso = 0;
-    $mensagensFalha = 0;
-
-    echo "🚀 Iniciando processamento da fila com timeout de {$timeoutSegundos} segundos...\n";
-    echo str_repeat("=", 60) . "\n";
-
-    while (true) {
-        // Verifica timeout
-        $tempoDecorrido = time() - $inicio;
-        if ($tempoDecorrido > $timeoutSegundos) {
-            echo "\n⏰ Timeout de {$timeoutSegundos} segundos atingido. Encerrando...\n";
-            echo "Tempo decorrido: {$tempoDecorrido} segundos\n";
-            break;
-        }
-
-        // Carrega a fila
-        if (!file_exists($arquivoFila)) {
-            echo "📭 Arquivo de fila não encontrado. Nenhuma mensagem para processar.\n";
-            break;
-        }
-
-        $conteudo = file_get_contents($arquivoFila);
-        $fila = json_decode($conteudo, true) ?? [];
-
-        // Se não há mensagens na fila, encerra
-        if (empty($fila)) {
-            echo "📭 Fila vazia. Nenhuma mensagem pendente.\n";
-            break;
-        }
-
-        // Filtra apenas mensagens pendentes
-        $pendentes = array_filter($fila, fn($item) => $item['status'] === 'pendente');
-
-        if (empty($pendentes)) {
-            echo "📭 Nenhuma mensagem pendente na fila.\n";
-            break;
-        }
-
-        // Pega a primeira mensagem pendente
-        $primeiraMsg = reset($pendentes);
-        $indice = array_search($primeiraMsg, $fila);
-
-        $mensagensProcessadas++;
-        $tempoRestante = $timeoutSegundos - $tempoDecorrido;
-
-        echo "\n📤 [" . $mensagensProcessadas . "] Processando mensagem:\n";
-        echo "   ID: {$primeiraMsg['id']}\n";
-        echo "   Chat: {$primeiraMsg['chat_id']}\n";
-        echo "   Tentativas: {$primeiraMsg['tentativas']}/3\n";
-        echo "   Tempo restante: " . gmdate("i:s", $tempoRestante) . "\n";
-
-        // Tenta enviar
-        $erro = sendTelegramMessage(
-            $primeiraMsg['mensagem'],
-            $primeiraMsg['chat_id'],
-            $primeiraMsg['bot_token']
-        );
-
-        // Atualiza ou remove baseado no resultado
-        if (empty($erro)) {
-            // Enviado com sucesso - REMOVE da fila
-            unset($fila[$indice]);
-            $mensagensSucesso++;
-            echo "   ✅ Mensagem enviada com sucesso! Removida da fila.\n";
-        } else {
-            // Falha no envio
-            $fila[$indice]['tentativas']++;
-            $fila[$indice]['ultimo_erro'] = $erro;
-            $fila[$indice]['ultima_tentativa'] = date('Y-m-d H:i:s');
-
-            if ($fila[$indice]['tentativas'] >= 3) {
-                // Falha definitiva - REMOVE da fila também
-                unset($fila[$indice]);
-                $mensagensFalha++;
-                echo "   ❌ Falha definitiva após 3 tentativas. Removida da fila.\n";
-                echo "   Erro: " . substr($erro, 0, 100) . "...\n";
-            } else {
-                // Mantém na fila para nova tentativa
-                echo "   ⚠️ Falha (tentativa {$fila[$indice]['tentativas']}/3). Mantida na fila.\n";
-                echo "   Erro: " . substr($erro, 0, 100) . "...\n";
-            }
-        }
-
-        // Reindexa o array (opcional, para manter índices limpos)
-        $fila = array_values($fila);
-
-        // Salva fila atualizada
-        file_put_contents($arquivoFila, json_encode($fila, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-
-        // Pequeno delay entre mensagens para não sobrecarregar a API
-        if (count($fila) > 0) {
-            usleep(500000); // 0.5 segundos
-        }
-    }
-}
-
-
-
-function sendTelegramMessage($mensagem, $chatID,  $botToken)
-{
-    // URL da API do Telegram para enviar mensagens
-    $url = "https://api.telegram.org/bot{$botToken}/sendMessage";
-
-    // Dados que serão enviados via POST
-    $dados = [
-        'chat_id' => $chatID,
-        'text' => $mensagem,
-        'parse_mode' => 'HTML',
-    ];
-
-    echo "<p><pre>$mensagem</pre><p>";
-
-    // Inicializa o cURL
-    $ch = curl_init();
-
-    // Configura as opções do cURL
-    curl_setopt($ch, CURLOPT_URL, $url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $dados);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-
-    // Executa a requisição e obtém a resposta
-    $resposta = curl_exec($ch);
-
-    // Verifica se houve erro
-    $ret = "";
-    if ($resposta === false) {
-        $ret = curl_error($ch);
-    }
-
-    // Fecha a conexão cURL
-    curl_close($ch);
-
-    return $ret;
-}
-
-
-
-
-$data = [];
-
-try {
-    $scraper = new WebScraper();
-    $html = $scraper->getContent('https://www.pciconcursos.com.br/concursos/');
-
     $dom = new DOMDocument();
-    libxml_use_internal_errors(true);
-    $dom->loadHTML($html);
-    libxml_clear_errors();
-
-    $xpath = new DOMXPath($dom);
-
-    $divContent = $xpath->query("//div[@id='concursos']");
-
-    if ($divContent->length > 0) {
-        $content = $divContent->item(0);
-
-        $items = $xpath->query(".//div", $content);
-        $lid = null;
-        foreach ($items as $index => $div) {
-
-            /** @disregard P1013 */
-            $id = $div->getAttribute('id');
-            if ($id) {
-                $lid = $id;
-            };
-
-            if ($lid) {
-                if (!isset($data[$lid])) {
-                    $data[$lid] = [];
-                }
-
-                /** @disregard P1013 */
-                $url = $div->getAttribute('data-url');
-                if ($url) {
-                    $title =  $xpath->query(".//a", $div)->item(0)->textContent ?? null;
-                    $slug = toSlug($title);
-
-                    /** @disregard P1013 */
-                    $image =  $xpath->query(".//img", $div)->item(0)->getAttribute('data-src') ?? null;
-
-
-                    $detail = [
-                        'vagas' => null,
-                        'salario' => null,
-                        'cadastro_reserva' => false,
-                        'cargo' => null,
-                        'nivel' => null,
-                        'uf' => null,
-                        'data' => null,
-                        'data_prorrogada' => false,
-                        'data_raw' => null
-                    ];
-
-                    // Extrai CD (vagas, salário, cargo, nível)
-                    $cdDiv = $xpath->query(".//div[@class='cd']", $div);
-                    if ($cdDiv->length > 0) {
-                        $textoCD = $cdDiv->item(0)->textContent;
-
-                        // Tenta extrair número de vagas
-                        if (preg_match('/(\d+(?:\.\d+)?)\s*vagas?/i', $textoCD, $match)) {
-                            $detail['vagas'] = $match[1];
-                        }
-
-                        // Tenta extrair salário
-                        if (preg_match('/R\$[\s]*([\d\.]+,\d{2})/', $textoCD, $match)) {
-                            $detail['salario'] = 'R$ ' . $match[1];
-                        }
-
-                        // Tenta extrair informação de cadastro reserva
-                        if (preg_match('/cadastro\s+(?:de\s+)?reserva/i', $textoCD)) {
-                            $detail['cadastro_reserva'] = true;
-                        }
-
-                        // Extrai spans para cargo e nível
-                        $spans = $xpath->query(".//span", $cdDiv->item(0));
-                        if ($spans->length > 0) {
-                            $primeiroSpan = $spans->item(0);
-                            $htmlSpan = $dom->saveHTML($primeiroSpan);
-
-                            // Verifica se tem <br> no span
-                            if (strpos($htmlSpan, '<br') !== false) {
-                                // Separa pelo <br>
-                                $partes = preg_split('/<br\s*\/?>/i', $htmlSpan);
-                                $detail['cargo'] = trim(strip_tags($partes[0]));
-                                if (isset($partes[1])) {
-                                    $detail['nivel'] = trim(strip_tags($partes[1]));
-                                }
-                            } else {
-                                $detail['cargo'] = trim($primeiroSpan->textContent);
-                            }
-
-                            // Se ainda não tem nível e existe segundo span
-                            if (!isset($detail['nivel']) && $spans->length > 1) {
-                                $detail['nivel'] = trim($spans->item(1)->textContent);
-                            }
-                        }
-                    }
-
-                    // Extrai CE (data)
-                    $ceDiv = $xpath->query(".//div[@class='ce']", $div);
-                    if ($ceDiv->length > 0) {
-                        $textoCE = trim($ceDiv->item(0)->textContent);
-                        $detail['data_raw'] = $textoCE;
-
-                        if (preg_match('/(\d{2}\/\d{2}\/\d{4})/', $textoCE, $match)) {
-                            $detail['data'] = $match[1];
-                        }
-
-                        if (strpos($textoCE, 'Prorrogado') !== false) {
-                            $detail['data_prorrogada'] = true;
-                        }
-                    }
-
-                    $uf = "";
-                    // Extrai CC (UF)
-                    $ccDiv = $xpath->query(".//div[@class='cc']", $div);
-                    if ($ccDiv->length > 0) {
-                        $uf = trim($ccDiv->item(0)->textContent);
-                        if ($uf && $uf != '') {
-                            $detail['uf'] = $uf;
-                        }
-                    }
-
-                    $title =  $xpath->query(".//a", $div)->item(0)->textContent ?? null;
-                    $slug = toSlug($uf . '-' . $title . '-' . $detail['cargo'] . '-' . $detail['nivel']);
-
-                    $data[$lid][$slug] = [
-                        'titulo' => $title,
-                        'url' => $url,
-                        'imagem' => $image,
-                        ...$detail,
-                        'html' => $dom->saveHTML($div)
-                    ];
-                }
-            }
-        }
-
-        // Carrega dados anteriores
-        $dadosAntigos = carregarDadosAnteriores('concursos.json');
-
-        // Gera modificações
-        $modificacoes = gerarModificacoes($data, $dadosAntigos);
-        processaModificacoes($modificacoes);
-
-        // Salva arquivo completo
-        $json = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        file_put_contents('concursos.json', $json);
-
-
-        // Se chegou aqui sem erros, remove o arquivo de erro se existir
-        if (file_exists('erro.json')) {
-            unlink('erro.json');
-        }
-        if (file_exists('ultimo_erro.log')) {
-            unlink('ultimo_erro.log');
-        }
-
-        echo "✅ Fim do processamento";
-    } else {
-        throw new Exception("Div com id 'concursos' não encontrada na página.");
+    if ($html === '' || !$dom->loadHTML('<?xml encoding="UTF-8">' . $html, LIBXML_NOERROR | LIBXML_NOWARNING | LIBXML_NONET)) {
+        throw new RuntimeException('HTML inválido na origem.');
     }
-} catch (Exception $e) {
-    $mensagemErro = $e->getMessage();
-    $detalhesErro = [
-        'arquivo' => $e->getFile(),
-        'linha' => $e->getLine(),
-        'codigo' => $e->getCode(),
-        'trace' => $e->getTraceAsString()
-    ];
+    $xpath = new DOMXPath($dom);
+    $list = $xpath->query('//div[@id="concursos"]')->item(0);
+    if ($list === null) {
+        throw new RuntimeException('Seção de concursos ausente na origem.');
+    }
 
-    // Salva o erro
-    salvarErro($mensagemErro, $detalhesErro);
+    $items = [];
+    $region = null;
+    $markers = './/div[@data-url or (@id and ' . byClass('ua') . ')]';
+    foreach ($xpath->query($markers, $list) as $entry) {
+        if (!$entry->hasAttribute('data-url')) {
+            $region = strtoupper($entry->getAttribute('id'));
+            continue;
+        }
 
-    // Exibe no console
-    echo "\n❌ ERRO: " . $mensagemErro . "\n";
-    echo "📁 Erro salvo em erro.json\n";
+        $url = trim($entry->getAttribute('data-url'));
+        $id = listingId($url);
+        $title = clean($xpath->query('.//a', $entry)->item(0)?->textContent);
+        if ($region === null || $title === '' || isset($items[$id])) {
+            throw new RuntimeException('Registro incompleto ou identificador duplicado na listagem.');
+        }
+
+        $cd = $xpath->query('.//div[' . byClass('cd') . ']', $entry)->item(0);
+        $details = clean($cd?->textContent);
+        $positions = $cd ? $xpath->query('.//span', $cd) : null;
+        $first = $positions?->item(0);
+        $positionHtml = $first ? $dom->saveHTML($first) : '';
+        $parts = preg_split('/<br\s*\/?>/i', $positionHtml, 2);
+        $cargo = $first ? clean(html_entity_decode(strip_tags($parts[0]), ENT_QUOTES | ENT_HTML5, 'UTF-8')) : '';
+        $nivel = isset($parts[1])
+            ? clean(html_entity_decode(strip_tags($parts[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'))
+            : clean($positions?->item(1)?->textContent);
+        $dateText = clean($xpath->query('.//div[' . byClass('ce') . ']', $entry)->item(0)?->textContent);
+        $uf = strtoupper(clean($xpath->query('.//div[' . byClass('cc') . ']', $entry)->item(0)?->textContent));
+        preg_match('/(\d+(?:\.\d+)?)\s*vagas?/i', $details, $vacancies);
+        preg_match('/R\$\s*([\d.]+,\d{2})/', $details, $salary);
+        preg_match('/\b\d{2}\/\d{2}\/\d{4}\b/', $dateText, $date);
+
+        $items[$id] = [
+            'titulo' => $title,
+            'url' => $url,
+            'regiao' => $region,
+            'uf' => $uf,
+            'cargo' => $cargo,
+            'vagas' => $vacancies[1] ?? '',
+            'salario' => isset($salary[1]) ? 'R$ ' . $salary[1] : '',
+            'nivel' => $nivel,
+            'cadastro_reserva' => (bool) preg_match('/cadastro\s+(?:de\s+)?reserva/i', $details),
+            'data' => $date[0] ?? '',
+            'data_prorrogada' => stripos($dateText, 'Prorrogado') !== false,
+        ];
+    }
+    if ($items === []) {
+        throw new RuntimeException('A origem retornou uma listagem sem concursos.');
+    }
+    ksort($items);
+    return $items;
 }
 
+function route(array $item): string
+{
+    if ($item['regiao'] === 'NACIONAL') {
+        return 'NACIONAL';
+    }
+    return in_array($item['uf'], ROUTES, true) ? $item['uf'] : $item['regiao'];
+}
 
-processQueueTelegramMessage();
+function credentials(string $route): array
+{
+    if (in_array($route, ROUTES, true)) {
+        $token = trim(getenv("TELEGRAM_BOT_TOKEN_$route") ?: '');
+        $chat = trim(getenv("TELEGRAM_CHAT_ID_$route") ?: '');
+        if ($token !== '' && $chat !== '') {
+            return [$token, $chat];
+        }
+    }
+    $token = trim(getenv('TELEGRAM_BOT_TOKEN') ?: '');
+    $chat = trim(getenv('TELEGRAM_CHAT_ID') ?: '');
+    if ($token === '' || $chat === '') {
+        throw new RuntimeException('Configure o par geral TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID.');
+    }
+    return [$token, $chat];
+}
 
-echo "</pre>";
+function escape(string $value): string
+{
+    return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function fieldText(mixed $value): string
+{
+    return is_bool($value) ? ($value ? 'Sim' : 'Não') : ((string) $value ?: '—');
+}
+
+function notification(string $kind, array $item, ?array $before = null): array
+{
+    $heading = match ($kind) {
+        'novo' => '🆕 Novo concurso',
+        'modificado' => '📝 Concurso atualizado',
+        'removido' => '❌ Concurso removido da listagem',
+    };
+    $url = escape($item['url']);
+    $lines = [$heading, '<b>' . escape($item['titulo']) . '</b>', "<a href=\"$url\">Ver no PCI Concursos</a>", ''];
+    if ($before === null) {
+        if ($item['regiao'] === 'NACIONAL') {
+            $lines[] = 'Abrangência: Nacional';
+        }
+        foreach (FIELDS as $key => $label) {
+            if ($key !== 'titulo' && !empty($item[$key])) {
+                $lines[] = $label . ': ' . escape(fieldText($item[$key]));
+            }
+        }
+    } else {
+        if ($before['regiao'] !== $item['regiao']) {
+            $lines[] = 'Seção: ' . escape($before['regiao']) . ' → ' . escape($item['regiao']);
+        }
+        foreach (FIELDS as $key => $label) {
+            if ($before[$key] !== $item[$key]) {
+                $lines[] = $label . ': <s>' . escape(fieldText($before[$key]))
+                    . '</s> → ' . escape(fieldText($item[$key]));
+            }
+        }
+    }
+    return ['route' => route($item), 'message' => implode("\n", $lines), 'attempts' => 0];
+}
+
+function changes(array $previous, array $current): array
+{
+    $messages = [];
+    foreach ($current as $id => $item) {
+        if (!isset($previous[$id])) {
+            $messages[] = notification('novo', $item);
+        } elseif (array_intersect_key($item, FIELDS) != array_intersect_key($previous[$id], FIELDS)
+            || $item['regiao'] !== $previous[$id]['regiao']) {
+            $messages[] = notification('modificado', $item, $previous[$id]);
+        }
+    }
+    foreach (array_diff_key($previous, $current) as $item) {
+        $messages[] = notification('removido', $item);
+    }
+    return $messages;
+}
+
+function loadState(string $path): array
+{
+    if (!file_exists($path)) {
+        return ['snapshot' => null, 'queue' => []];
+    }
+    $state = json_decode(file_get_contents($path), true, 512, JSON_THROW_ON_ERROR);
+    if (!is_array($state) || !array_key_exists('snapshot', $state)
+        || ($state['snapshot'] !== null && !is_array($state['snapshot'])) || !is_array($state['queue'] ?? null)) {
+        throw new RuntimeException('Estado persistido inválido.');
+    }
+    return $state;
+}
+
+function saveState(string $path, array $state): void
+{
+    $json = json_encode($state, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+    $temporary = $path . '.tmp';
+    if (file_put_contents($temporary, $json . "\n") === false || !rename($temporary, $path)) {
+        throw new RuntimeException('Falha ao gravar estado local.');
+    }
+}
+
+function sendQueue(string $path): int
+{
+    $state = loadState($path);
+    $sent = $failed = 0;
+    $deadline = microtime(true) + 90;
+    foreach ($state['queue'] as $index => $notice) {
+        if (microtime(true) >= $deadline || $sent + $failed >= 20) {
+            break;
+        }
+        [$token, $chat] = credentials($notice['route']);
+        try {
+            [$status, $body] = request("https://api.telegram.org/bot$token/sendMessage", [
+                'chat_id' => $chat,
+                'text' => $notice['message'],
+                'parse_mode' => 'HTML',
+                'link_preview_options' => ['is_disabled' => true],
+            ]);
+        } catch (RuntimeException $error) {
+            fwrite(STDERR, $error->getMessage() . "\n");
+            $status = 0;
+            $body = '';
+        }
+        if ($status === 429) {
+            fwrite(STDERR, "Telegram limitou o envio. Fila mantida para a próxima rodada.\n");
+            $failed++;
+            break;
+        }
+        if ($status === 200 && (json_decode($body, true)['ok'] ?? false) === true) {
+            unset($state['queue'][$index]);
+            $sent++;
+        } else {
+            $attempt = ++$state['queue'][$index]['attempts'];
+            $failed++;
+            fwrite(STDERR, "Falha no envio para {$notice['route']} (HTTP $status, tentativa $attempt/3).\n");
+            if ($attempt >= 3) {
+                $state['failed'][] = $state['queue'][$index];
+                $state['failed'] = array_slice($state['failed'], -100);
+                unset($state['queue'][$index]);
+            }
+        }
+        saveState($path, [...$state, 'queue' => array_values($state['queue'])]);
+        usleep(500000);
+    }
+    printf("Enviadas: %d | Falhas: %d | Pendentes: %d\n", $sent, $failed, count($state['queue']));
+    return $failed === 0 ? 0 : 1;
+}
+
+function main(array $argv): int
+{
+    $mode = $argv[1] ?? '';
+    $path = $argv[2] ?? '';
+    if ($mode === 'send' && $path !== '') {
+        return sendQueue($path);
+    }
+    if ($mode !== 'check' && !($mode === 'collect' && $path !== '')) {
+        throw new RuntimeException('Uso: php index.php check | collect <estado.json> | send <estado.json>');
+    }
+    [$status, $html] = request(SOURCE);
+    if ($status !== 200) {
+        throw new RuntimeException("PCI Concursos retornou HTTP $status.");
+    }
+    $items = parseListing($html);
+    printf("Concursos coletados: %d\n", count($items));
+    if ($mode === 'check') {
+        return 0;
+    }
+    $state = loadState($path);
+    $messages = $state['snapshot'] === null ? [] : changes($state['snapshot'], $items);
+    if ($state['snapshot'] === null) {
+        echo "Referência inicial criada sem emitir avisos.\n";
+    }
+    $state['snapshot'] = $items;
+    array_push($state['queue'], ...$messages);
+    saveState($path, $state);
+    printf("Novos avisos na fila: %d\n", count($messages));
+    return 0;
+}
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
+    try {
+        exit(main($argv));
+    } catch (Throwable $error) {
+        fwrite(STDERR, 'Erro: ' . $error->getMessage() . "\n");
+        exit(1);
+    }
+}
