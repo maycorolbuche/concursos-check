@@ -12,30 +12,27 @@ case "${1:-}" in
     case "$status" in
       0)
         git fetch --no-tags origin "$ref"
-        git rev-parse FETCH_HEAD > "$directory/parent"
+        git rev-parse FETCH_HEAD > "$directory/head"
         git show FETCH_HEAD:state.json > "$directory/state.json"
         ;;
       2)
-        : > "$directory/parent"
+        : > "$directory/head"
         rm -f "$directory/state.json"
         ;;
       *) exit "$status" ;;
     esac
     ;;
   save)
-    parent="$(cat "$directory/parent")"
+    previous="$(cat "$directory/head")"
     blob="$(git hash-object -w "$directory/state.json")"
     tree="$(printf '100644 blob %s\tstate.json\n' "$blob" | git mktree)"
-    parents=()
-    if [[ -n "$parent" ]]; then
-      if [[ "$tree" == "$(git rev-parse "$parent^{tree}")" ]]; then
-        exit 0
-      fi
-      parents=(-p "$parent")
+    if [[ -n "$previous" && "$tree" == "$(git rev-parse "$previous^{tree}")" \
+        && -z "$(git show -s --format=%P "$previous")" ]]; then
+      exit 0
     fi
-    commit="$(git commit-tree "$tree" "${parents[@]}" -m "Atualizar estado do monitor")"
-    git push origin "$commit:$ref"
-    printf '%s\n' "$commit" > "$directory/parent"
+    commit="$(git commit-tree "$tree" -m "Atualizar estado do monitor")"
+    git push --force-with-lease="$ref:$previous" origin "$commit:$ref"
+    printf '%s\n' "$commit" > "$directory/head"
     ;;
   *) exit 2 ;;
 esac
