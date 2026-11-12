@@ -69,8 +69,8 @@ jobs:
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_BOT_TOKEN_NACIONAL: ${{ secrets.TELEGRAM_BOT_TOKEN_NACIONAL }}
-          TELEGRAM_CHAT_ID_NACIONAL: ${{ secrets.TELEGRAM_CHAT_ID_NACIONAL }}
+          TELEGRAM_BOT_TOKEN_BR: ${{ secrets.TELEGRAM_BOT_TOKEN_BR }}
+          TELEGRAM_CHAT_ID_BR: ${{ secrets.TELEGRAM_CHAT_ID_BR }}
           TELEGRAM_BOT_TOKEN_AC: ${{ secrets.TELEGRAM_BOT_TOKEN_AC }}
           TELEGRAM_CHAT_ID_AC: ${{ secrets.TELEGRAM_CHAT_ID_AC }}
           TELEGRAM_BOT_TOKEN_AL: ${{ secrets.TELEGRAM_BOT_TOKEN_AL }}

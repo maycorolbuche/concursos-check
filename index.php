@@ -133,8 +133,9 @@ function route(array $item): string
 function credentials(string $route): array
 {
     if (in_array($route, ROUTES, true)) {
-        $token = trim(getenv("TELEGRAM_BOT_TOKEN_$route") ?: '');
-        $chat = trim(getenv("TELEGRAM_CHAT_ID_$route") ?: '');
+        $suffix = $route === 'NACIONAL' ? 'BR' : $route;
+        $token = trim(getenv("TELEGRAM_BOT_TOKEN_$suffix") ?: '');
+        $chat = trim(getenv("TELEGRAM_CHAT_ID_$suffix") ?: '');
         if ($token !== '' && $chat !== '') {
             return [$token, $chat];
         }
