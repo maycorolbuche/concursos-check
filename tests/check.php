@@ -56,7 +56,10 @@ $updated['/noticias/municipal']['cadastro_reserva'] = true;
 $messages = changes($items, $updated);
 expect(count($messages) === 1 && str_contains($messages[0]['message'], '⚠️ CADASTRO RESERVA ⚠️'), 'Cadastro reserva deve gerar aviso');
 $messages = changes($items, ['/noticias/nacional' => $nacional]);
-expect(count($messages) === 1 && $messages[0]['route'] === 'SP' && str_contains($messages[0]['message'], '&amp;'), 'Remoção e escape de HTML');
+expect(count($messages) === 1 && $messages[0]['route'] === 'ALL' && str_contains($messages[0]['message'], '&amp;'), 'Remoção e escape de HTML');
+expect(notification('removido', $nacional)['route'] === 'ALL', 'Remoção nacional deve ir para o geral');
+expect(credentials(queuedRoute(array_replace($messages[0], ['route' => 'SP']))) === ['geral', '-1'], 'Remoção já enfileirada deve ir para o geral');
+expect(queuedRoute(notification('novo', $sp)) === 'SP', 'Concurso novo mantém o destino regional');
 expect(changes($items, $items) === [], 'Repetição não gera avisos');
 
 $expectedNew = <<<'MESSAGE'

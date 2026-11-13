@@ -10,6 +10,7 @@ Em **Settings → Secrets and variables → Actions → Repository secrets**, ca
 específico, adicione o par com sufixo `_BR` ou de uma UF, como `_SP`.
 O workflow já prevê todas as UFs. Se uma das duas credenciais específicas
 estiver vazia, o aviso usa o par geral inteiro. Cada aviso vai a um destino.
+Remoções são avisos administrativos e usam sempre o par geral.
 
 ## Disparo pela Cloudflare
 
