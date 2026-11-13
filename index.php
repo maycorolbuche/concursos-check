@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+const REMOVED_HEADING = '❌ CONCURSO REMOVIDO';
 const SOURCE = 'https://www.pciconcursos.com.br/concursos/';
 const ROUTES = ['NACIONAL', 'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'];
 const FIELDS = [
@@ -167,7 +168,7 @@ function notification(string $kind, array $item, ?array $before = null): array
     $heading = match ($kind) {
         'novo' => '🆕 NOVO CONCURSO',
         'modificado' => '📝 CONCURSO ATUALIZADO',
-        'removido' => '❌ CONCURSO REMOVIDO',
+        'removido' => REMOVED_HEADING,
     };
     $separator = '═════════════════';
     $title = comparedValue($before['titulo'] ?? null, $item['titulo'], 'escape');
@@ -198,7 +199,7 @@ function notification(string $kind, array $item, ?array $before = null): array
         $safe = escape($url);
         return "<a href=\"$safe\">$safe</a>";
     });
-    return ['route' => route($item), 'message' => implode("\n", $lines), 'attempts' => 0];
+    return ['route' => $kind === 'removido' ? 'ALL' : route($item), 'message' => implode("\n", $lines), 'attempts' => 0];
 }
 
 function groupByContest(array $items): array
@@ -266,6 +267,13 @@ function saveState(string $path, array $state): void
     }
 }
 
+function queuedRoute(array $notice): string
+{
+    // Avisos antigos guardavam o destino regional mesmo para remoções.
+    $heading = explode("\n", $notice['message'], 3)[1] ?? '';
+    return $heading === '<b>' . REMOVED_HEADING . '</b>' ? 'ALL' : $notice['route'];
+}
+
 function sendQueue(string $path): int
 {
     $state = loadState($path);
@@ -275,7 +283,8 @@ function sendQueue(string $path): int
         if (microtime(true) >= $deadline || $sent + $failed >= 20) {
             break;
         }
-        [$token, $chat] = credentials($notice['route']);
+        $route = queuedRoute($notice);
+        [$token, $chat] = credentials($route);
         try {
             [$status, $body] = request("https://api.telegram.org/bot$token/sendMessage", [
                 'chat_id' => $chat,
@@ -298,7 +307,7 @@ function sendQueue(string $path): int
         } else {
             $attempt = ++$state['queue'][$index]['attempts'];
             $failed++;
-            fwrite(STDERR, "Falha no envio para {$notice['route']} (HTTP $status, tentativa $attempt/3).\n");
+            fwrite(STDERR, "Falha no envio para $route (HTTP $status, tentativa $attempt/3).\n");
             if ($attempt >= 3) {
                 $state['failed'][] = $state['queue'][$index];
                 $state['failed'] = array_slice($state['failed'], -100);
